@@ -3,9 +3,7 @@ import 'dotenv/config';
 import { createClient } from 'redis';
 import { Telegraf } from 'telegraf';
 
-const { redisPass, redisUrl, redisPort, BOT_TOKEN, BOT_CHANNEL_ID } = process.env;
-
-const walletAddress = 'FDk64ha2MskfH2GLousxoyAATXQxLLk5JKbtWiDYepNM';
+const { redisPass, redisUrl, redisPort, BOT_TOKEN, BOT_CHANNEL_ID, walletAddress } = process.env;
 
 async function redisConnect() {
   // redis
