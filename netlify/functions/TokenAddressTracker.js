@@ -3,10 +3,9 @@ import 'dotenv/config';
 import { createClient } from 'redis';
 import { Telegraf } from 'telegraf';
 
-const { redisPass, redisUrl, redisPort, BOT_TOKEN, BOT_CHANNEL_ID, walletAddress } = process.env;
+const { redisPass, redisUrl, redisPort, BOT_TOKEN, BOT_CHANNEL_ID, walletAddresses } = process.env;
 
 async function redisConnect() {
-  // redis
   const client = createClient({
     password: redisPass,
     socket: {
@@ -15,7 +14,6 @@ async function redisConnect() {
     },
   });
   client.on('error', (err) => console.log('Redis Client Error', err));
-
   await client.connect();
   return client;
 }
@@ -27,29 +25,33 @@ export default async function getTokenAccountsByOwner() {
   const connection = new Connection(clusterApiUrl('mainnet-beta'));
   const tokenProgramId = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 
-  try {
-    const accounts = await connection.getParsedTokenAccountsByOwner(new PublicKey(walletAddress), { programId: tokenProgramId });
+  // Split the walletAddresses string into an array of addresses
+  const wallets = walletAddresses.split(',');
 
-    for (let account of accounts.value) {
-      const accountInfo = account.account.data.parsed.info;
-      const balance = accountInfo.tokenAmount.uiAmount;
-      const tokenId = accountInfo.mint;
+  for (let walletAddress of wallets) {
+    try {
+      const accounts = await connection.getParsedTokenAccountsByOwner(new PublicKey(walletAddress.trim()), { programId: tokenProgramId });
 
-      // Check if this account was previously notified and its balance
-      const prevBalance = await redisClient.get(tokenId);
+      for (let account of accounts.value) {
+        const accountInfo = account.account.data.parsed.info;
+        const tokenId = accountInfo.mint;
 
-      const message = `Token ${tokenId} has a balance of ${balance}.`;
-      console.log(message);
-      if (balance > 0 && (!prevBalance || parseFloat(prevBalance) !== balance)) {
-        // Notify via Telegram
-        await bot.telegram.sendMessage(BOT_CHANNEL_ID, message);
+        // Check if a notification for this token was previously sent
+        const notified = await redisClient.get(tokenId);
 
-        // Update Redis with the new balance
-        await redisClient.set(tokenId, balance.toString());
+        if (!notified) {
+          const message = `Token ${tokenId} is present in one of your wallets.`;
+          console.log(message);
+          // Notify via Telegram
+          await bot.telegram.sendMessage(BOT_CHANNEL_ID, message);
+
+          // Mark this token as notified in Redis
+          await redisClient.set(tokenId, 'true');
+        }
       }
+    } catch (error) {
+      console.error('Error fetching token accounts for wallet ' + walletAddress + ':', error);
     }
-  } catch (error) {
-    console.error('Error fetching token accounts:', error);
   }
   await redisClient.quit();
   return new Response('Ok');
